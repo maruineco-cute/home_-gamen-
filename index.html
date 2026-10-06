@@ -35,9 +35,12 @@
   --panel: #171b1d; --accent: #5cc2b8; --accent-fg: #08201d; --sel-bg: #1b2f2c;
   color-scheme: dark;
 }
-* { box-sizing: border-box; }
 body { margin: 0; }
 [hidden] { display: none !important; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body, .sheet, .tab, .o, .chip, .file, .slot, .lab, .link, .primary { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input[type="text"] { -webkit-user-select: text; user-select: text; }
+#cv { outline: none; -webkit-touch-callout: none; }
 body {
   background: var(--bg); color: var(--fg);
   font-family: var(--font-body); font-size: 14px; line-height: 1.6;
@@ -58,7 +61,12 @@ h1 { margin: 0; font-size: 1.1rem; font-weight: 700; letter-spacing: .1em; }
   box-shadow: 0 -12px 32px -14px rgba(0,0,0,.35);
   padding: 8px 16px calc(14px + env(safe-area-inset-bottom, 0px));
 }
-.grab { width: 38px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto 10px; }
+.grab { display: flex; flex-direction: column; align-items: center; gap: 5px; width: 100%; background: none; border: 0; padding: 2px 0 10px; cursor: pointer; font: inherit; color: var(--muted); }
+.grab .bar { width: 38px; height: 4px; border-radius: 2px; background: var(--line); }
+.grab .gl { font-size: .7rem; letter-spacing: .14em; }
+.sheet.collapsed .tabs, .sheet.collapsed .tp { display: none !important; }
+.sheet.collapsed .grab { padding-bottom: 2px; }
+body.fit #cv { width: auto; height: min(calc(100dvh - 128px), 760px); max-width: 100%; }
 .slots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .slot { position: relative; display: block; cursor: pointer; aspect-ratio: 1; border: 1px dashed var(--accent); padding: 3px; border-radius: 16px; overflow: hidden; background: var(--bg); }
 .slot input { position: absolute; width: 1px; height: 1px; opacity: 0; }
@@ -133,7 +141,7 @@ input:focus-visible, button:focus-visible, .file:focus-within { outline: 2px sol
   </main>
 
   <section class="sheet" id="sheet" aria-label="設定">
-    <div class="grab"></div>
+    <button type="button" class="grab" id="grab" aria-expanded="true"><span class="bar"></span><span class="gl" id="gl">メニューを閉じる</span></button>
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" id="t-img" aria-selected="true" aria-controls="p-img" type="button">画像</button>
       <button class="tab" role="tab" id="t-bar" aria-selected="false" aria-controls="p-bar" type="button">バー</button>
@@ -696,7 +704,9 @@ input:focus-visible, button:focus-visible, .file:focus-within { outline: 2px sol
   function draw(canvas, u, rec) {
     var fr = S.frame !== 'none', b = fr ? 2.8 : 0, mg = fr ? 1 : 0, ox = b + mg, oy = b + mg;
     var TW = SW + 2 * ox, TH = SH + 2 * oy;
-    canvas.width = Math.round(TW * u); canvas.height = Math.round(TH * u);
+    var cw = Math.round(TW * u), ch = Math.round(TH * u);
+    if (canvas.width !== cw) canvas.width = cw;
+    if (canvas.height !== ch) canvas.height = ch;
     var c = canvas.getContext('2d');
     g = c; U = u; REC = !!rec; if (rec) HITS = [];
     c.setTransform(u, 0, 0, u, 0, 0);
@@ -866,6 +876,15 @@ input:focus-visible, button:focus-visible, .file:focus-within { outline: 2px sol
 
   /* ===== 起動 ===== */
   var sheet = $('sheet');
+  var collapsed = false;
+  function setCollapsed(v) {
+    collapsed = v;
+    sheet.classList.toggle('collapsed', v); document.body.classList.toggle('fit', v);
+    $('grab').setAttribute('aria-expanded', String(!v)); $('gl').textContent = v ? 'メニューを開く' : 'メニューを閉じる';
+    window.scrollTo(0, 0); sched();
+  }
+  $('grab').addEventListener('click', function () { setCollapsed(!collapsed); });
+  tabs.forEach(function (n) { $('t-' + n).addEventListener('click', function () { if (collapsed) setCollapsed(false); }); });
   function setSheetH() { document.documentElement.style.setProperty('--sheet-h', sheet.offsetHeight + 'px'); }
   if (window.ResizeObserver) new ResizeObserver(setSheetH).observe(sheet);
   setSheetH();
