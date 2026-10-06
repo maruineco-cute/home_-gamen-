@@ -1,0 +1,879 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="ステータスバーとコントロールセンターを組み立てて、スマホ枠つきのPNG・JPG画像として保存できるメーカーです。">
+<title>スマホ画面メーカー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: 上にスマホ本体、下に固定のタブ式シート。広い画面では左右2列。画面そのものはcanvasに描き、プレビューと保存画像を完全に一致させる。 */
+:root {
+  --bg: #eceeed;
+  --fg: #181d1f;
+  --muted: #6b7679;
+  --line: #d6dbdc;
+  --panel: #fbfcfc;
+  --accent: #1f6f6a;
+  --accent-fg: #ffffff;
+  --sel-bg: #dfece8;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --sheet-h: 340px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101314; --fg: #e9eeef; --muted: #8e999c; --line: #2b3235;
+    --panel: #171b1d; --accent: #5cc2b8; --accent-fg: #08201d; --sel-bg: #1b2f2c;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101314; --fg: #e9eeef; --muted: #8e999c; --line: #2b3235;
+  --panel: #171b1d; --accent: #5cc2b8; --accent-fg: #08201d; --sel-bg: #1b2f2c;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 14px; line-height: 1.6;
+  padding-inline: 16px; padding-block: 18px calc(var(--sheet-h) + 24px);
+}
+.app { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.top { display: flex; flex-direction: column; gap: 2px; }
+.kicker { font-family: var(--font-mono); font-size: .62rem; letter-spacing: .24em; color: var(--muted); }
+h1 { margin: 0; font-size: 1.1rem; font-weight: 700; letter-spacing: .1em; }
+.stage { display: flex; justify-content: center; }
+#cv { width: min(100%, 340px); height: auto; display: block; touch-action: pan-y; -webkit-user-select: none; user-select: none; }
+
+/* ---- 下のシート ---- */
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+  max-width: 560px; margin-inline: auto;
+  background: var(--panel); border: 1px solid var(--line); border-bottom: 0; border-radius: 22px 22px 0 0;
+  box-shadow: 0 -12px 32px -14px rgba(0,0,0,.35);
+  padding: 8px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+}
+.grab { width: 38px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto 10px; }
+.slots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.slot { position: relative; display: block; cursor: pointer; aspect-ratio: 1; border: 1px dashed var(--accent); padding: 3px; border-radius: 16px; overflow: hidden; background: var(--bg); }
+.slot input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.slot img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 12px; }
+.slots[data-shape="round"] .slot, .slots[data-shape="round"] .slot img { border-radius: 50%; }
+.slot:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.tab {
+  font: inherit; font-size: .86rem; letter-spacing: .06em; padding: 9px 4px; border: 0; border-radius: 12px;
+  background: transparent; color: var(--muted); cursor: pointer; min-width: 0;
+}
+.tab[aria-selected="true"] { background: var(--fg); color: var(--bg); font-weight: 700; }
+.tp { display: flex; flex-direction: column; gap: 12px; padding-top: 14px; min-height: 226px; }
+.tp[hidden] { display: none; }
+.lab { font-size: .66rem; letter-spacing: .16em; color: var(--muted); font-weight: 500; display: flex; justify-content: space-between; margin-bottom: 6px; }
+.fld { min-width: 0; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.opt { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 6px; }
+.o, .chip {
+  font: inherit; font-size: .82rem; color: var(--fg); background: transparent; cursor: pointer; min-width: 0;
+  border: 1px solid var(--line); border-radius: 12px; padding: 9px 4px;
+}
+.o[aria-pressed="true"], .chip[aria-pressed="true"] { background: var(--sel-bg); border-color: var(--accent); font-weight: 700; }
+.chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.chip { font-size: .76rem; padding: 9px 2px; }
+input[type="text"] {
+  width: 100%; font: inherit; font-size: .9rem; color: var(--fg); background: transparent;
+  border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px;
+}
+input[type="range"] { width: 100%; accent-color: var(--accent); margin: 6px 0 0; }
+.file {
+  display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; text-align: center;
+  border: 1px dashed var(--accent); color: var(--accent); border-radius: 12px; padding: 12px 6px; font-weight: 700; font-size: .84rem;
+}
+.file input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.link { font: inherit; font-size: .74rem; color: var(--muted); background: none; border: 0; padding: 6px 0 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.primary {
+  font: inherit; font-size: .95rem; font-weight: 700; letter-spacing: .12em; cursor: pointer;
+  background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 14px; padding: 14px;
+}
+.hint { margin: 0; font-size: .72rem; color: var(--muted); line-height: 1.55; }
+#msg { margin: 0; font-size: .78rem; min-height: 1.2em; }
+input:focus-visible, button:focus-visible, .file:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- 保存の代替表示 ---- */
+.ov { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.8); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 16px; }
+.ov[hidden] { display: none; }
+.ov img { max-height: 76%; max-width: 100%; object-fit: contain; }
+.ov p { color: #fff; margin: 0; font-size: .85rem; text-align: center; }
+.ov button { font: inherit; padding: 9px 22px; border-radius: 12px; border: 0; background: #fff; color: #111; cursor: pointer; }
+
+@media (min-width: 880px) {
+  body { padding-block: 28px 40px; }
+  .app { max-width: 960px; display: grid; grid-template-columns: minmax(0, 400px) minmax(0, 1fr); gap: 20px 40px; align-items: start; }
+  .top { grid-column: 1 / -1; }
+  .sheet { position: static; max-width: none; border-bottom: 1px solid var(--line); border-radius: 18px; box-shadow: none; padding-bottom: 14px; }
+  .grab { display: none; }
+  #cv { width: min(100%, 380px); }
+}
+</style>
+
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <span class="kicker">STATUS BAR / CONTROL CENTER</span>
+    <h1>スマホ画面メーカー</h1>
+  </header>
+
+  <main class="stage">
+    <canvas id="cv" role="img" aria-label="スマホの画面プレビュー。ボタンやスライダーは直接さわれます"></canvas>
+  </main>
+
+  <section class="sheet" id="sheet" aria-label="設定">
+    <div class="grab"></div>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="t-img" aria-selected="true" aria-controls="p-img" type="button">画像</button>
+      <button class="tab" role="tab" id="t-bar" aria-selected="false" aria-controls="p-bar" type="button">バー</button>
+      <button class="tab" role="tab" id="t-scr" aria-selected="false" aria-controls="p-scr" type="button">画面</button>
+      <button class="tab" role="tab" id="t-app" aria-selected="false" aria-controls="p-app" type="button">アプリ</button>
+      <button class="tab" role="tab" id="t-save" aria-selected="false" aria-controls="p-save" type="button">保存</button>
+    </div>
+
+    <div class="tp" role="tabpanel" id="p-img" aria-labelledby="t-img">
+      <div class="two">
+        <div class="fld">
+          <label class="file"><input type="file" id="f-wall" accept="image/*">壁紙を選ぶ</label>
+          <button type="button" class="link" id="r-wall">見本に戻す</button>
+        </div>
+        <div class="fld">
+          <label class="file"><input type="file" id="f-art" accept="image/*">ジャケットを選ぶ</label>
+          <button type="button" class="link" id="r-art">見本に戻す</button>
+        </div>
+      </div>
+      <div class="two">
+        <div class="fld">
+          <label class="lab" for="in-song">曲名</label>
+          <input type="text" id="in-song" value="夕暮れの丘" maxlength="24">
+        </div>
+        <div class="fld">
+          <label class="lab" for="in-by">アーティスト</label>
+          <input type="text" id="in-by" value="あなたの名前" maxlength="24">
+        </div>
+      </div>
+      <p class="hint">壁紙はボタンの後ろに透けて見えます。写真は端末の中だけで使われ、送信されません。</p>
+    </div>
+
+    <div class="tp" role="tabpanel" id="p-bar" aria-labelledby="t-bar" hidden>
+      <div class="two">
+        <div class="fld">
+          <label class="lab" for="in-time">時刻</label>
+          <input type="text" id="in-time" value="9:41" maxlength="6" inputmode="numeric">
+        </div>
+        <div class="fld">
+          <label class="lab" for="bat"><span>電池残量</span><span id="bat-o">78%</span></label>
+          <input type="range" id="bat" min="0" max="100" value="78">
+        </div>
+      </div>
+      <div class="fld">
+        <span class="lab">電波の強さ</span>
+        <div class="opt" data-key="signal" data-int="1">
+          <button type="button" class="o" data-value="0">圏外</button>
+          <button type="button" class="o" data-value="1">1</button>
+          <button type="button" class="o" data-value="2">2</button>
+          <button type="button" class="o" data-value="3">3</button>
+          <button type="button" class="o" data-value="4">4</button>
+        </div>
+      </div>
+      <div class="fld">
+        <span class="lab">通信の種類(Wi-Fiオフのとき表示)</span>
+        <div class="opt" data-key="net">
+          <button type="button" class="o" data-value="5G">5G</button>
+          <button type="button" class="o" data-value="LTE">LTE</button>
+          <button type="button" class="o" data-value="4G">4G</button>
+          <button type="button" class="o" data-value="3G">3G</button>
+        </div>
+      </div>
+      <div class="chips">
+        <button type="button" class="chip" data-tog="pct" data-on="on" data-off="off">電池%</button>
+        <button type="button" class="chip" data-tog="charge" data-on="on" data-off="off">充電中</button>
+        <button type="button" class="chip" data-tog="low" data-on="on" data-off="off">低電力</button>
+        <button type="button" class="chip" data-tog="sbcolor" data-on="dark" data-off="light">黒文字</button>
+      </div>
+    </div>
+
+    <div class="tp" role="tabpanel" id="p-scr" aria-labelledby="t-scr" hidden>
+      <div class="fld">
+        <span class="lab">カメラ部分</span>
+        <div class="opt" data-key="cut">
+          <button type="button" class="o" data-value="island">アイランド</button>
+          <button type="button" class="o" data-value="notch">ノッチ</button>
+          <button type="button" class="o" data-value="none">なし</button>
+        </div>
+      </div>
+      <div class="two">
+        <div class="fld">
+          <span class="lab">画面の角</span>
+          <div class="opt" data-key="round">
+            <button type="button" class="o" data-value="on">丸い</button>
+            <button type="button" class="o" data-value="off">四角</button>
+          </div>
+        </div>
+        <div class="fld">
+          <span class="lab">下のボタン列</span>
+          <div class="opt" data-key="quick">
+            <button type="button" class="o" data-value="off">なし</button>
+            <button type="button" class="o" data-value="on">あり</button>
+          </div>
+        </div>
+      </div>
+      <div class="fld">
+        <span class="lab">スマホ本体の枠</span>
+        <div class="opt" data-key="frame">
+          <button type="button" class="o" data-value="none">なし</button>
+          <button type="button" class="o" data-value="black">黒</button>
+          <button type="button" class="o" data-value="silver">銀</button>
+          <button type="button" class="o" data-value="blue">青</button>
+        </div>
+      </div>
+      <p class="hint">幅が足りないときは、Bluetoothと電池%を自動で省いて、カメラ部分と重ならないようにします。</p>
+    </div>
+
+    <div class="tp" role="tabpanel" id="p-app" aria-labelledby="t-app" hidden>
+      <div class="two">
+        <div class="fld">
+          <span class="lab">下のアプリ列</span>
+          <div class="opt" data-key="dock">
+            <button type="button" class="o" data-value="off">なし</button>
+            <button type="button" class="o" data-value="bar">板つき</button>
+            <button type="button" class="o" data-value="plain">板なし</button>
+          </div>
+        </div>
+        <div class="fld">
+          <span class="lab">アイコンの形</span>
+          <div class="opt" data-key="ishape">
+            <button type="button" class="o" data-value="round">丸</button>
+            <button type="button" class="o" data-value="squircle">角丸</button>
+          </div>
+        </div>
+      </div>
+      <div class="fld">
+        <span class="lab">アプリのアイコン(タップして画像を選ぶ)</span>
+        <div class="slots" id="slots" data-shape="squircle">
+          <label class="slot"><input type="file" accept="image/*" data-i="0"><img alt="1つ目のアイコン"></label>
+          <label class="slot"><input type="file" accept="image/*" data-i="1"><img alt="2つ目のアイコン"></label>
+          <label class="slot"><input type="file" accept="image/*" data-i="2"><img alt="3つ目のアイコン"></label>
+          <label class="slot"><input type="file" accept="image/*" data-i="3"><img alt="4つ目のアイコン"></label>
+        </div>
+        <button type="button" class="link" id="r-app">すべて見本に戻す</button>
+      </div>
+      <p class="hint">正方形に近い画像がきれいに収まります。四角い画像は中央を切り取って入ります。</p>
+    </div>
+
+    <div class="tp" role="tabpanel" id="p-save" aria-labelledby="t-save" hidden>
+      <div class="two">
+        <div class="fld">
+          <span class="lab">形式</span>
+          <div class="opt" data-key="fmt">
+            <button type="button" class="o" data-value="png">PNG</button>
+            <button type="button" class="o" data-value="jpg">JPG</button>
+          </div>
+        </div>
+        <div class="fld">
+          <span class="lab">JPGの背景</span>
+          <div class="opt" data-key="jbg">
+            <button type="button" class="o" data-value="white">白</button>
+            <button type="button" class="o" data-value="black">黒</button>
+          </div>
+        </div>
+      </div>
+      <button type="button" class="primary" id="save">画像を保存する</button>
+      <p id="msg" role="status" aria-live="polite"></p>
+      <p class="hint">PNGは枠の外が透明になります。ブラウザのダウンロードとして保存されます。</p>
+    </div>
+  </section>
+</div>
+
+<div class="ov" id="ov" hidden>
+  <img id="ov-img" alt="保存用の画像">
+  <p>画像を長押しして保存してください。</p>
+  <button type="button" id="ov-close">閉じる</button>
+</div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var cv = $('cv');
+
+  /* ===== 状態 ===== */
+  var S = {
+    airplane: false, cell: true, wifi: true, bt: true, lock: false, focus: false, torch: false, playing: true,
+    prev: null, vol: 60, bri: 70,
+    signal: 4, net: '5G', time: '9:41', batt: 78, song: '夕暮れの丘', by: 'あなたの名前',
+    pct: 'on', charge: 'off', low: 'off', sbcolor: 'light',
+    cut: 'island', round: 'on', quick: 'off', frame: 'black', fmt: 'png', jbg: 'white',
+    dock: 'plain', ishape: 'squircle'
+  };
+  var dockImgs = [null, null, null, null];
+
+  /* ===== 見本の画像 ===== */
+  function makeSample() {
+    var c = document.createElement('canvas');
+    c.width = 1080; c.height = 2340;
+    var g = c.getContext('2d');
+    g.scale(1.5, 1.5);
+    var sky = g.createLinearGradient(0, 0, 0, 1560);
+    sky.addColorStop(0, '#1d2a55'); sky.addColorStop(.4, '#6a4a86'); sky.addColorStop(.62, '#e07a62'); sky.addColorStop(.78, '#f5b86e');
+    g.fillStyle = sky; g.fillRect(0, 0, 720, 1560);
+    var seed = 7;
+    function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+    for (var i = 0; i < 70; i++) { g.fillStyle = 'rgba(255,255,255,' + (0.25 + rnd() * 0.6) + ')'; g.beginPath(); g.arc(rnd() * 720, rnd() * 640, 0.8 + rnd() * 1.6, 0, 7); g.fill(); }
+    var sun = g.createRadialGradient(360, 1060, 10, 360, 1060, 330);
+    sun.addColorStop(0, 'rgba(255,244,214,1)'); sun.addColorStop(.3, 'rgba(255,208,140,.75)'); sun.addColorStop(1, 'rgba(255,190,120,0)');
+    g.fillStyle = sun; g.fillRect(0, 600, 720, 960);
+    function hill(y, amp, color, ph) {
+      g.beginPath(); g.moveTo(0, 1560);
+      for (var x = 0; x <= 720; x += 8) g.lineTo(x, y + Math.sin(x / 120 + ph) * amp + Math.sin(x / 47 + ph * 2) * amp * .25);
+      g.lineTo(720, 1560); g.closePath(); g.fillStyle = color; g.fill();
+    }
+    hill(1130, 50, '#9a4f58', .4);
+    hill(1230, 62, '#5d3550', 1.7);
+    hill(1360, 54, '#2d2238', 3.1);
+    return c;
+  }
+  var SAMPLE = makeSample();
+  var wallImg = SAMPLE, wallFy = .5, artImg = SAMPLE, artFy = .74, wpVer = 1;
+
+  /* ===== 描画の道具 ===== */
+  var FONT = '-apple-system, "SF Pro Text", "Hiragino Sans", "Noto Sans JP", "Yu Gothic", Roboto, "Segoe UI", sans-serif';
+  var g = null, U = 1, HITS = [], REC = false, BL = null, L = { TW: 100, TH: 216, ox: 0, oy: 0 };
+  var SW = 100, SH = 100 * 19.5 / 9;
+
+  function mk(w, h) { var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+  function rr(c, x, y, w, h, r) {
+    r = Math.max(0, Math.min(r, w / 2, h / 2));
+    c.beginPath(); c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+  }
+  function cover(c, img, x, y, w, h, fy) {
+    var iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    if (!iw || !ih) return;
+    var s = Math.max(w / iw, h / ih), dw = iw * s, dh = ih * s;
+    c.drawImage(img, x + (w - dw) / 2, y + (h - dh) * (fy == null ? .5 : fy), dw, dh);
+  }
+  function txt(s, x, y, size, weight, color, align, maxW) {
+    g.save(); g.translate(x, y); g.scale(1 / U, 1 / U);
+    g.font = weight + ' ' + (size * U) + 'px ' + FONT;
+    g.fillStyle = color; g.textAlign = align || 'left'; g.textBaseline = 'middle';
+    var t = String(s);
+    if (maxW) {
+      var lim = maxW * U;
+      if (g.measureText(t).width > lim) {
+        while (t.length > 1 && g.measureText(t + '…').width > lim) t = t.slice(0, -1);
+        t += '…';
+      }
+    }
+    g.fillText(t, 0, 0); g.restore();
+  }
+  function mw(s, size, weight) {
+    g.save(); g.font = weight + ' ' + (size * U) + 'px ' + FONT;
+    var w = g.measureText(String(s)).width / U; g.restore(); return w;
+  }
+
+  /* アイコン(線で描く。b は絵の外枠で、この大きさに合わせて余白なく拡大する) */
+  var IC = {
+    wifi: { b: [.5, 4, 23, 17], o: [['p', 'M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01']] },
+    bt: { b: [5, 0, 14, 24], o: [['p', 'M6.5 6.5l11 11L12 23V1l5.5 5.5-11 11']] },
+    plane: { b: [2, 2, 20, 21], o: [['p', 'M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z']] },
+    cell: { b: [2, 2, 20, 20], o: [['c', 12, 12, 2], ['p', 'M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14']] },
+    lock: { b: [3, 2.5, 21, 19], o: [['p', 'M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10']] },
+    mirror: { b: [2.5, 4, 19, 16], o: [['r', 2.5, 4, 13, 10, 1.5], ['r', 8.5, 10, 13, 10, 1.5]] },
+    moon: { b: [3, 3, 18, 18], o: [['p', 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z']] },
+    sun: { b: [1.5, 1.5, 21, 21], o: [['c', 12, 12, 4.5], ['p', 'M12 1.5v2.5M12 20v2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M1.5 12H4M20 12h2.5M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8']] },
+    vol: { b: [2, 3.5, 20, 17], o: [['p', 'M11 5 6 9H2v6h4l5 4z'], ['p', 'M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07']] },
+    vol1: { b: [2, 3.5, 17, 17], o: [['p', 'M11 5 6 9H2v6h4l5 4z'], ['p', 'M15.54 8.46a5 5 0 0 1 0 7.07']] },
+    mute: { b: [2, 4.5, 21, 15], o: [['p', 'M11 5 6 9H2v6h4l5 4z'], ['p', 'M23 9l-6 6M17 9l6 6']] },
+    torch: { b: [6, 2, 12, 20], o: [['p', 'M18 6c0 2-2 2-2 4v10a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2V10c0-2-2-2-2-4V2h12z'], ['p', 'M6 6h12M12 12v2']] },
+    timer: { b: [4, 2.5, 16, 18.5], o: [['c', 12, 13, 8], ['p', 'M12 9v4l2.5 1.5M9.5 2.5h5']] },
+    calc: { b: [4, 2, 16, 20], o: [['r', 4, 2, 16, 20, 2.5], ['p', 'M8 6.5h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01M8 19h.01M12 19h.01M16 19h.01']] },
+    cam: { b: [1, 3, 22, 18], o: [['p', 'M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z'], ['c', 12, 13, 4]] },
+    play: { f: 1, b: [7, 4.5, 13, 15], o: [['p', 'M7 4.5v15l13-7.5z']] },
+    pause: { f: 1, b: [6, 4, 12, 16], o: [['p', 'M6 4h4v16H6zM14 4h4v16h-4z']] },
+    prev: { f: 1, b: [5, 5, 15, 14], o: [['p', 'M5 5h2.5v14H5zM20 5v14L8.5 12z']] },
+    next: { f: 1, b: [4, 5, 15, 14], o: [['p', 'M16.5 5H19v14h-2.5zM4 5l11.5 7L4 19z']] },
+    bolt: { f: 1, b: [4, 2, 15, 20], o: [['p', 'M13 2 4 14h7l-1 8 9-12h-7z']] }
+  };
+  var pc = {};
+  function P(d) { return pc[d] || (pc[d] = new Path2D(d)); }
+  function icon(n, cx, cy, size, color, lw, edge) {
+    var d = IC[n], b = d.b, s = size / Math.max(b[2], b[3]);
+    g.save();
+    g.translate(cx - (b[0] + b[2] / 2) * s, cy - (b[1] + b[3] / 2) * s);
+    g.scale(s, s);
+    if (d.f) {
+      var p = P(d.o[0][1]); g.fillStyle = color; g.fill(p);
+      if (edge) { g.strokeStyle = edge; g.lineWidth = .9; g.lineJoin = 'round'; g.stroke(p); }
+    } else {
+      g.strokeStyle = color; g.lineWidth = lw || 2; g.lineCap = 'round'; g.lineJoin = 'round';
+      d.o.forEach(function (o) {
+        if (o[0] === 'p') g.stroke(P(o[1]));
+        else if (o[0] === 'c') { g.beginPath(); g.arc(o[1], o[2], o[3], 0, 6.2832); g.stroke(); }
+        else { rr(g, o[1], o[2], o[3], o[4], o[5]); g.stroke(); }
+      });
+    }
+    g.restore();
+  }
+
+  /* ぼかし(タイルのガラス表現)。縮小と拡大をくり返して作る */
+  function scaleTo(src, w, h) {
+    var o = mk(w, h), c = o.getContext('2d');
+    c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+    c.drawImage(src, 0, 0, w, h); return o;
+  }
+  var blurCache = {};
+  function getBlur() {
+    var w = Math.round(SW * U), h = Math.round(SH * U), key = wpVer + '|' + w;
+    if (blurCache[key]) return blurCache[key];
+    var keys = Object.keys(blurCache);
+    if (keys.length > 2) blurCache = {};
+    var base = mk(w, h), bc = base.getContext('2d');
+    bc.fillStyle = '#2b2d3a'; bc.fillRect(0, 0, w, h);
+    cover(bc, wallImg, 0, 0, w, h, wallFy);
+    var passes = Math.max(2, Math.round(Math.log2(w / 30))), c = base, cw = w, ch = h, i;
+    for (i = 0; i < passes; i++) { cw = Math.max(8, Math.ceil(cw / 2)); ch = Math.max(8, Math.ceil(ch / 2)); c = scaleTo(c, cw, ch); }
+    for (i = 0; i < passes; i++) { cw = Math.min(w, cw * 2); ch = Math.min(h, ch * 2); c = scaleTo(c, cw, ch); }
+    c = scaleTo(c, w, h);
+    blurCache[key] = c; return c;
+  }
+
+  function hit(id, type, x, y, w, h) { if (REC) HITS.push({ id: id, type: type, x: x, y: y, w: w, h: h }); }
+
+  /* ガラスのタイル: ぼかした壁紙の上に、うすい灰色の膜を重ねる */
+  function glass(x, y, w, h, r, on) {
+    g.save(); rr(g, x, y, w, h, r); g.clip();
+    g.drawImage(BL, x * U, y * U, w * U, h * U, x, y, w, h);
+    g.fillStyle = on ? 'rgba(255,255,255,.93)' : 'rgba(118,118,128,.38)';
+    g.fillRect(x, y, w, h);
+    g.restore();
+    rr(g, x + .11, y + .11, w - .22, h - .22, r); g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = .22; g.stroke();
+  }
+
+  /* 画面のふち: 内側のうすい影と、ガラスの端に入る細い光 */
+  function drawEdge(R) {
+    var d = 5.5, a;
+    a = g.createLinearGradient(0, 0, 0, d); a.addColorStop(0, 'rgba(0,0,0,.2)'); a.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = a; g.fillRect(0, 0, SW, d);
+    a = g.createLinearGradient(0, SH, 0, SH - d); a.addColorStop(0, 'rgba(0,0,0,.30)'); a.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = a; g.fillRect(0, SH - d, SW, d);
+    a = g.createLinearGradient(0, 0, d, 0); a.addColorStop(0, 'rgba(0,0,0,.24)'); a.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = a; g.fillRect(0, 0, d, SH);
+    a = g.createLinearGradient(SW, 0, SW - d, 0); a.addColorStop(0, 'rgba(0,0,0,.24)'); a.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = a; g.fillRect(SW - d, 0, d, SH);
+    /* 細い光の線: 上側を明るく、場所によってムラを入れる */
+    var path = function () { rr(g, .18, .18, SW - .36, SH - .36, Math.max(0, R - .18)); };
+    var base = g.createLinearGradient(0, 0, 0, SH);
+    base.addColorStop(0, 'rgba(255,255,255,.55)'); base.addColorStop(.18, 'rgba(255,255,255,.2)');
+    base.addColorStop(.6, 'rgba(255,255,255,.07)'); base.addColorStop(1, 'rgba(255,255,255,.26)');
+    path(); g.strokeStyle = base; g.lineWidth = .36; g.stroke();
+    [[20, 0, 46, .8], [80, 0, 34, .5], [0, 52, 30, .3], [100, 120, 40, .26], [88, SH, 38, .42], [30, SH, 26, .2]].forEach(function (h) {
+      var rg = g.createRadialGradient(h[0], h[1], 0, h[0], h[1], h[2]);
+      rg.addColorStop(0, 'rgba(255,255,255,' + h[3] + ')'); rg.addColorStop(1, 'rgba(255,255,255,0)');
+      path(); g.strokeStyle = rg; g.lineWidth = .36; g.stroke();
+    });
+    rr(g, .75, .75, SW - 1.5, SH - 1.5, Math.max(0, R - .75)); g.strokeStyle = 'rgba(255,255,255,.05)'; g.lineWidth = .3; g.stroke();
+    var top = g.createLinearGradient(0, 0, 0, SH * .2);
+    top.addColorStop(0, 'rgba(255,255,255,.07)'); top.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = top; g.fillRect(0, 0, SW, SH * .2);
+    var sheen = g.createLinearGradient(0, 0, SW * .9, SH * .42);
+    sheen.addColorStop(0, 'rgba(255,255,255,.09)'); sheen.addColorStop(.5, 'rgba(255,255,255,.02)'); sheen.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = sheen; g.fillRect(0, 0, SW, SH);
+  }
+
+  /* ===== 画面全体 ===== */
+  var DARK = '#1c1c1e';
+  function drawScreen() {
+    g.fillStyle = '#2b2d3a'; g.fillRect(0, 0, SW, SH);
+    cover(g, wallImg, 0, 0, SW, SH, wallFy);
+    var sh = g.createLinearGradient(0, 0, 0, SH);
+    sh.addColorStop(0, 'rgba(0,0,0,.16)'); sh.addColorStop(.28, 'rgba(0,0,0,0)'); sh.addColorStop(1, 'rgba(0,0,0,.18)');
+    g.fillStyle = sh; g.fillRect(0, 0, SW, SH);
+    BL = getBlur();
+
+    var PAD = 11, GAP = 3, CELL = (SW - 2 * PAD - 3 * GAP) / 4, TOP = 17;
+    var cx = function (i) { return PAD + i * (CELL + GAP); };
+    var cy = function (j) { return TOP + j * (CELL + GAP); };
+    var D2 = 2 * CELL + GAP;
+
+    /* 通信まとめ */
+    glass(cx(0), cy(0), D2, D2, 5, false);
+    var cd = (D2 - 4 - 1.6) / 2, ctog = [['airplane', 'plane'], ['cell', 'cell'], ['wifi', 'wifi'], ['bt', 'bt']];
+    ctog.forEach(function (t, i) {
+      var px = cx(0) + 2 + (i % 2) * (cd + 1.6), py = cy(0) + 2 + Math.floor(i / 2) * (cd + 1.6), on = S[t[0]];
+      g.beginPath(); g.arc(px + cd / 2, py + cd / 2, cd / 2, 0, 6.2832);
+      g.fillStyle = on ? 'rgba(255,255,255,.95)' : 'rgba(255,255,255,.22)'; g.fill();
+      icon(t[1], px + cd / 2, py + cd / 2, t[1] === 'wifi' ? 9.2 : 8.2, on ? DARK : '#fff', 2.1);
+      hit(t[0], 'btn', px, py, cd, cd);
+    });
+
+    /* 再生中 */
+    var mx = cx(2), my = cy(0);
+    glass(mx, my, D2, D2, 5, false);
+    g.save(); rr(g, mx + 2.8, my + 2.8, 9, 9, 2); g.clip(); g.fillStyle = '#555'; g.fillRect(mx + 2.8, my + 2.8, 9, 9);
+    cover(g, artImg, mx + 2.8, my + 2.8, 9, 9, artFy); g.restore();
+    var tx = mx + 2.8 + 9 + 2.2, tw = D2 - 2.8 - 9 - 2.2 - 2.4;
+    txt(S.song, tx, my + 2.8 + 3.2, 3.1, 600, '#fff', 'left', tw);
+    txt(S.by, tx, my + 2.8 + 7, 2.7, 500, 'rgba(255,255,255,.68)', 'left', tw);
+    var mcy = my + D2 - 9;
+    icon('prev', mx + D2 * .2, mcy, 5.4, 'rgba(255,255,255,.55)');
+    icon(S.playing ? 'pause' : 'play', mx + D2 * .5, mcy, 7.4, '#fff');
+    icon('next', mx + D2 * .8, mcy, 5.4, 'rgba(255,255,255,.55)');
+    hit('playing', 'btn', mx + D2 * .5 - 5.5, mcy - 5.5, 11, 11);
+
+    /* 画面ロック・ミラーリング */
+    glass(cx(0), cy(2), CELL, CELL, 5, S.lock);
+    icon('lock', cx(0) + CELL / 2, cy(2) + CELL / 2, 8, S.lock ? DARK : '#fff', 2);
+    hit('lock', 'btn', cx(0), cy(2), CELL, CELL);
+    glass(cx(1), cy(2), CELL, CELL, 5, false);
+    icon('mirror', cx(1) + CELL / 2, cy(2) + CELL / 2, 8.2, '#fff', 2);
+
+    /* 明るさ・音量 */
+    function slider(id, col, v, nm) {
+      var x = cx(col), y = cy(2), w = CELL, h = D2;
+      glass(x, y, w, h, 5, false);
+      var fh = h * v / 100;
+      g.save(); rr(g, x, y, w, h, 5); g.clip();
+      g.fillStyle = 'rgba(255,255,255,.95)'; g.fillRect(x, y + h - fh, w, fh); g.restore();
+      var iy = y + h - 5.4;
+      icon(nm, x + w / 2, iy, 7, fh > 6.4 ? '#4a4a4f' : '#fff', 2);
+      hit(id, 'slider', x, y, w, h);
+    }
+    slider('bri', 2, S.bri, 'sun');
+    slider('vol', 3, S.vol, S.vol === 0 ? 'mute' : (S.vol < 40 ? 'vol1' : 'vol'));
+
+    /* 集中モード */
+    var fx = cx(0), fy = cy(3);
+    glass(fx, fy, D2, CELL, 5, S.focus);
+    g.beginPath(); g.arc(fx + 2.6 + 5, fy + CELL / 2, 5, 0, 6.2832);
+    g.fillStyle = S.focus ? '#5e5ce6' : 'rgba(255,255,255,.2)'; g.fill();
+    icon('moon', fx + 2.6 + 5, fy + CELL / 2, 5.8, '#fff', 2.2);
+    txt('集中モード', fx + 2.6 + 10 + 2, fy + CELL / 2 - (S.focus ? 1.8 : 0), 3.1, 600, S.focus ? DARK : '#fff', 'left', D2 - 17);
+    if (S.focus) txt('オン', fx + 2.6 + 10 + 2, fy + CELL / 2 + 2.1, 2.7, 500, 'rgba(60,60,67,.62)', 'left');
+    hit('focus', 'btn', fx, fy, D2, CELL);
+
+    /* 下のボタン列 */
+    if (S.quick === 'on') {
+      [['torch', 'torch'], ['timer', 'timer'], ['calc', 'calc'], ['cam', 'cam']].forEach(function (q, i) {
+        var on = q[0] === 'torch' && S.torch;
+        glass(cx(i), cy(4), CELL, CELL, 5, on);
+        icon(q[1], cx(i) + CELL / 2, cy(4) + CELL / 2, 7.8, on ? DARK : '#fff', 2);
+        if (q[0] === 'torch') hit('torch', 'btn', cx(i), cy(4), CELL, CELL);
+      });
+    }
+
+    drawDock();
+    drawStatus();
+
+    drawEdge(S.round === 'on' ? 12 : 3);
+
+    /* カメラ部分 */
+    g.fillStyle = '#000';
+    if (S.cut === 'island') { rr(g, 37, 3, 26, 7.6, 3.8); g.fill(); }
+    else if (S.cut === 'notch') {
+      g.beginPath(); g.moveTo(31, -1); g.lineTo(69, -1); g.lineTo(69, 2.2);
+      g.arcTo(69, 6.6, 64.6, 6.6, 4.4); g.lineTo(35.4, 6.6); g.arcTo(31, 6.6, 31, 2.2, 4.4); g.closePath(); g.fill();
+    }
+    /* ホームバー */
+    rr(g, 33, SH - 3.6, 34, 1.3, .65);
+    g.fillStyle = S.sbcolor === 'dark' ? 'rgba(0,0,0,.75)' : 'rgba(255,255,255,.8)'; g.fill();
+  }
+
+  /* 下のアプリ列 */
+  var DEF = [
+    { c: ['#5ec8ff', '#1f6fe0'], i: 'cam' }, { c: ['#ffb45a', '#f0641f'], i: 'calc' },
+    { c: ['#7be08a', '#1f9a52'], i: 'timer' }, { c: ['#b79bff', '#6a45d6'], i: 'moon' }
+  ];
+  function paintIcon(i, x, y, sz) {
+    var im = dockImgs[i];
+    if (im) { g.fillStyle = '#444'; g.fillRect(x, y, sz, sz); cover(g, im, x, y, sz, sz, .5); return; }
+    var d = DEF[i], gr = g.createLinearGradient(x, y, x, y + sz);
+    gr.addColorStop(0, d.c[0]); gr.addColorStop(1, d.c[1]);
+    g.fillStyle = gr; g.fillRect(x, y, sz, sz);
+    icon(d.i, x + sz / 2, y + sz / 2, sz * .5, '#fff', 2.2);
+  }
+  function drawDock() {
+    if (S.dock === 'off') return;
+    var dw = 92, dh = 23, dx = 4, dy = SH - 6.2 - dh;
+    if (S.dock === 'bar') glass(dx, dy, dw, dh, 8.5, false);
+    var sz = 15.6, gap = (dw - 4 * sz) / 5, r = S.ishape === 'round' ? sz / 2 : sz * .2237;
+    for (var i = 0; i < 4; i++) {
+      var x = dx + gap + i * (sz + gap), y = dy + (dh - sz) / 2;
+      g.save(); g.shadowColor = 'rgba(0,0,0,.28)'; g.shadowBlur = 1.4 * U; g.shadowOffsetY = .5 * U;
+      rr(g, x, y, sz, sz, r); g.fillStyle = '#333'; g.fill(); g.restore();
+      g.save(); rr(g, x, y, sz, sz, r); g.clip(); paintIcon(i, x, y, sz);
+      var sh = g.createLinearGradient(x, y, x, y + sz);
+      sh.addColorStop(0, 'rgba(255,255,255,.18)'); sh.addColorStop(.5, 'rgba(255,255,255,0)'); sh.addColorStop(1, 'rgba(0,0,0,.1)');
+      g.fillStyle = sh; g.fillRect(x, y, sz, sz); g.restore();
+      rr(g, x + .1, y + .1, sz - .2, sz - .2, Math.max(0, r - .1)); g.strokeStyle = 'rgba(255,255,255,.22)'; g.lineWidth = .2; g.stroke();
+    }
+  }
+  function thumbOf(i) {
+    var c = mk(96, 96), sg = g, su = U;
+    g = c.getContext('2d'); U = 96 / 15.6; g.setTransform(U, 0, 0, U, 0, 0);
+    paintIcon(i, 0, 0, 15.6);
+    g = sg; U = su;
+    return c.toDataURL('image/png');
+  }
+
+  function drawStatus() {
+    var col = S.sbcolor === 'dark' ? '#0b0b0c' : '#ffffff';
+    var cy = S.cut === 'notch' ? 8.4 : 6.8;
+    txt(S.time, 9, cy, 4.4, 600, col, 'left');
+    var cutR = S.cut === 'island' ? 63 : (S.cut === 'notch' ? 69 : 0);
+    var right = 92.5, avail = S.cut === 'none' ? 999 : right - (cutR + 2.5);
+    var cellOn = S.cell && !S.airplane, items = [];
+    if (S.bt) items.push({ k: 'bt', w: 2.4 });
+    if (S.airplane) items.push({ k: 'plane', w: 3.8 }); else items.push({ k: 'sig', w: 5.85 });
+    if (S.wifi) items.push({ k: 'wifi', w: 4.6 });
+    else if (cellOn && S.signal > 0) items.push({ k: 'net', w: mw(S.net, 3.5, 600) });
+    if (S.pct === 'on') items.push({ k: 'pct', w: mw(String(S.batt), 3.4, 600) });
+    items.push({ k: 'bat', w: 7.4 });
+    var GAP = 1.4;
+    function total() { return items.reduce(function (a, i) { return a + i.w; }, 0) + GAP * (items.length - 1); }
+    ['bt', 'pct'].forEach(function (k) {
+      if (total() <= avail) return;
+      var i = items.findIndex(function (x) { return x.k === k; });
+      if (i >= 0) items.splice(i, 1);
+    });
+    var x = right;
+    for (var n = items.length - 1; n >= 0; n--) {
+      var it = items[n]; x -= it.w;
+      if (it.k === 'bt') icon('bt', x + it.w / 2, cy, 3.6, col, 2.4);
+      else if (it.k === 'plane') icon('plane', x + it.w / 2, cy, 3.8, col, 2.2);
+      else if (it.k === 'sig') {
+        var lv = cellOn ? S.signal : 0;
+        for (var b = 0; b < 4; b++) {
+          var bh = 1.3 + b * .7;
+          rr(g, x + b * 1.6, cy + 1.7 - bh, 1.05, bh, .25);
+          g.fillStyle = col; g.globalAlpha = b < lv ? 1 : .32; g.fill(); g.globalAlpha = 1;
+        }
+      }
+      else if (it.k === 'wifi') icon('wifi', x + it.w / 2, cy + .1, 4.6, col, 2.5);
+      else if (it.k === 'net') txt(S.net, x, cy, 3.5, 600, col, 'left');
+      else if (it.k === 'pct') txt(String(S.batt), x, cy, 3.4, 600, col, 'left');
+      else if (it.k === 'bat') {
+        rr(g, x, cy - 1.6, 6.5, 3.2, 1); g.strokeStyle = col; g.globalAlpha = .5; g.lineWidth = .32; g.stroke(); g.globalAlpha = 1;
+        var fc = S.charge === 'on' ? '#30d158' : (S.low === 'on' ? '#ffd60a' : (S.batt <= 20 ? '#ff453a' : col));
+        var fw = (6.5 - .8) * S.batt / 100;
+        if (fw > 0) { rr(g, x + .4, cy - 1.6 + .4, Math.max(fw, .8), 3.2 - .8, .6); g.fillStyle = fc; g.fill(); }
+        rr(g, x + 6.7, cy - .6, .5, 1.2, .25); g.fillStyle = col; g.globalAlpha = .5; g.fill(); g.globalAlpha = 1;
+        if (S.charge === 'on') icon('bolt', x + 3.25, cy, 2.8, '#fff', 0, 'rgba(0,0,0,.5)');
+      }
+      x -= GAP;
+    }
+  }
+
+  /* ===== スマホ本体の枠 ===== */
+  var FR = {
+    black: { g: [[0, '#4d4d51'], [.35, '#1e1e20'], [.65, '#2b2b2e'], [1, '#111112']], btn: '#2a2a2c' },
+    silver: { g: [[0, '#f4f4f6'], [.4, '#c8c8cd'], [.7, '#e7e7eb'], [1, '#b3b3b9']], btn: '#d0d0d5' },
+    blue: { g: [[0, '#6b7d97'], [.4, '#2f3c52'], [.7, '#4b5c77'], [1, '#262f3e']], btn: '#3a475c' }
+  };
+  function drawBody(c, TW, TH, b, mg, R) {
+    var pal = FR[S.frame], bodyR = R + b;
+    c.fillStyle = pal.btn;
+    [[mg - .9, 38, 5], [mg - .9, 50, 9], [mg - .9, 62, 9]].forEach(function (s) { rr(c, s[0], mg + s[1], 1.7, s[2], .5); c.fill(); });
+    rr(c, TW - mg - .8, mg + 56, 1.7, 14, .5); c.fill();
+    var gr = c.createLinearGradient(0, 0, TW, TH);
+    pal.g.forEach(function (s) { gr.addColorStop(s[0], s[1]); });
+    rr(c, mg, mg, TW - 2 * mg, TH - 2 * mg, bodyR); c.fillStyle = gr; c.fill();
+    rr(c, mg + .15, mg + .15, TW - 2 * mg - .3, TH - 2 * mg - .3, bodyR - .1); c.strokeStyle = 'rgba(255,255,255,.35)'; c.lineWidth = .3; c.stroke();
+    rr(c, mg + 1, mg + 1, TW - 2 * mg - 2, TH - 2 * mg - 2, bodyR - 1); c.fillStyle = '#050506'; c.fill();
+  }
+
+  function draw(canvas, u, rec) {
+    var fr = S.frame !== 'none', b = fr ? 2.8 : 0, mg = fr ? 1 : 0, ox = b + mg, oy = b + mg;
+    var TW = SW + 2 * ox, TH = SH + 2 * oy;
+    canvas.width = Math.round(TW * u); canvas.height = Math.round(TH * u);
+    var c = canvas.getContext('2d');
+    g = c; U = u; REC = !!rec; if (rec) HITS = [];
+    c.setTransform(u, 0, 0, u, 0, 0);
+    c.clearRect(0, 0, TW, TH);
+    var R = S.round === 'on' ? 12 : 3;
+    if (fr) drawBody(c, TW, TH, b, mg, R);
+    c.save(); c.translate(ox, oy); rr(c, 0, 0, SW, SH, R); c.clip();
+    drawScreen();
+    c.restore();
+    if (rec) L = { TW: TW, TH: TH, ox: ox, oy: oy };
+  }
+
+  /* ===== プレビュー ===== */
+  var raf = 0;
+  function previewU() {
+    var w = cv.clientWidth || 340, dpr = Math.min(window.devicePixelRatio || 1, 3);
+    return Math.max(4, Math.min(9, w * dpr / 104));
+  }
+  function render() { draw(cv, previewU(), true); }
+  function sched() { if (raf) return; raf = requestAnimationFrame(function () { raf = 0; render(); syncUI(); }); }
+
+  function syncUI() {
+    document.querySelectorAll('.opt').forEach(function (el) {
+      var k = el.getAttribute('data-key');
+      el.querySelectorAll('.o').forEach(function (b) { b.setAttribute('aria-pressed', String(S[k]) === b.getAttribute('data-value') ? 'true' : 'false'); });
+    });
+    document.querySelectorAll('.chip').forEach(function (b) {
+      b.setAttribute('aria-pressed', S[b.getAttribute('data-tog')] === b.getAttribute('data-on') ? 'true' : 'false');
+    });
+    $('bat-o').textContent = S.batt + '%';
+    $('slots').setAttribute('data-shape', S.ishape);
+  }
+  function refreshThumbs() {
+    document.querySelectorAll('#slots .slot').forEach(function (l, i) { l.querySelector('img').src = thumbOf(i); });
+  }
+
+  /* ===== 画面のさわり方 ===== */
+  function toScreen(e) {
+    var r = cv.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / r.width * L.TW - L.ox, y: (e.clientY - r.top) / r.height * L.TH - L.oy };
+  }
+  function hitAt(p) {
+    for (var i = HITS.length - 1; i >= 0; i--) {
+      var h = HITS[i];
+      if (p.x >= h.x && p.x <= h.x + h.w && p.y >= h.y && p.y <= h.y + h.h) return h;
+    }
+    return null;
+  }
+  function act(id) {
+    if (id === 'airplane') {
+      if (!S.airplane) { S.prev = { cell: S.cell, wifi: S.wifi, bt: S.bt }; S.airplane = true; S.cell = false; S.wifi = false; S.bt = false; }
+      else { var p = S.prev || { cell: true, wifi: true, bt: true }; S.airplane = false; S.cell = p.cell; S.wifi = p.wifi; S.bt = p.bt; }
+    } else if (id === 'cell') {
+      if (S.airplane) { S.airplane = false; S.cell = true; } else S.cell = !S.cell;
+    } else { S[id] = !S[id]; }
+    sched();
+  }
+  var drag = null;
+  function setSlider(h, e) {
+    var p = toScreen(e), v = Math.round((1 - (p.y - h.y) / h.h) * 100);
+    S[h.id] = Math.max(0, Math.min(100, v)); sched();
+  }
+  cv.addEventListener('pointerdown', function (e) {
+    var h = hitAt(toScreen(e));
+    if (h && h.type === 'slider') { drag = h; try { cv.setPointerCapture(e.pointerId); } catch (x) {} setSlider(h, e); }
+  });
+  cv.addEventListener('pointermove', function (e) {
+    if (drag) { setSlider(drag, e); return; }
+    var h = hitAt(toScreen(e));
+    cv.style.cursor = h ? (h.type === 'slider' ? 'ns-resize' : 'pointer') : 'default';
+  });
+  function endDrag() { drag = null; }
+  cv.addEventListener('pointerup', endDrag);
+  cv.addEventListener('pointercancel', endDrag);
+  cv.addEventListener('click', function (e) {
+    var h = hitAt(toScreen(e));
+    if (h && h.type === 'btn') act(h.id);
+  });
+  cv.addEventListener('touchstart', function (e) {
+    var t = e.touches[0], h = t && hitAt(toScreen(t));
+    if (h && h.type === 'slider') e.preventDefault();
+  }, { passive: false });
+
+  /* ===== 設定タブ ===== */
+  var tabs = ['img', 'bar', 'scr', 'app', 'save'];
+  tabs.forEach(function (n) {
+    $('t-' + n).addEventListener('click', function () {
+      tabs.forEach(function (m) {
+        $('t-' + m).setAttribute('aria-selected', m === n ? 'true' : 'false');
+        $('p-' + m).hidden = m !== n;
+      });
+    });
+  });
+  document.querySelectorAll('.opt').forEach(function (el) {
+    var k = el.getAttribute('data-key'), isInt = el.getAttribute('data-int') === '1';
+    el.addEventListener('click', function (e) {
+      var b = e.target.closest('.o'); if (!b) return;
+      var v = b.getAttribute('data-value');
+      S[k] = isInt ? parseInt(v, 10) : v; sched();
+    });
+  });
+  document.querySelectorAll('.chip').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var k = b.getAttribute('data-tog');
+      S[k] = S[k] === b.getAttribute('data-on') ? b.getAttribute('data-off') : b.getAttribute('data-on'); sched();
+    });
+  });
+  $('in-time').addEventListener('input', function (e) { S.time = e.target.value; sched(); });
+  $('in-song').addEventListener('input', function (e) { S.song = e.target.value; sched(); });
+  $('in-by').addEventListener('input', function (e) { S.by = e.target.value; sched(); });
+  $('bat').addEventListener('input', function (e) { S.batt = parseInt(e.target.value, 10); sched(); });
+
+  function loadFile(file, cb) {
+    var r = new FileReader();
+    r.onload = function () { var im = new Image(); im.onload = function () { cb(im); }; im.src = r.result; };
+    r.readAsDataURL(file);
+  }
+  $('f-wall').addEventListener('change', function (e) {
+    var f = e.target.files && e.target.files[0]; if (!f) return;
+    loadFile(f, function (im) { wallImg = im; wallFy = .5; wpVer++; sched(); });
+  });
+  $('f-art').addEventListener('change', function (e) {
+    var f = e.target.files && e.target.files[0]; if (!f) return;
+    loadFile(f, function (im) { artImg = im; artFy = .5; sched(); });
+  });
+  $('r-wall').addEventListener('click', function () { wallImg = SAMPLE; wallFy = .5; wpVer++; sched(); });
+  $('r-art').addEventListener('click', function () { artImg = SAMPLE; artFy = .74; sched(); });
+  document.querySelectorAll('#slots input').forEach(function (inp) {
+    inp.addEventListener('change', function (e) {
+      var f = e.target.files && e.target.files[0], i = parseInt(inp.getAttribute('data-i'), 10);
+      if (!f) return;
+      loadFile(f, function (im) { dockImgs[i] = im; refreshThumbs(); sched(); });
+    });
+  });
+  $('r-app').addEventListener('click', function () { dockImgs = [null, null, null, null]; refreshThumbs(); sched(); });
+
+  /* ===== 保存 ===== */
+  function say(t, bad) { var m = $('msg'); m.textContent = t; m.style.color = bad ? '#c0392b' : 'var(--accent)'; }
+  $('save').addEventListener('click', function () {
+    var png = S.fmt === 'png', off = mk(10, 10);
+    say('画像を作っています…');
+    setTimeout(function () {
+      draw(off, 11.7, false);
+      var out = off;
+      if (!png) {
+        out = mk(off.width, off.height);
+        var c = out.getContext('2d');
+        c.fillStyle = S.jbg === 'black' ? '#0b0b0c' : '#ffffff'; c.fillRect(0, 0, out.width, out.height);
+        c.drawImage(off, 0, 0);
+      }
+      render();
+      out.toBlob(function (blob) {
+        if (!blob) { say('画像を作れませんでした。もう一度お試しください。', true); return; }
+        var name = 'phone-screen.' + (png ? 'png' : 'jpg');
+        var url = URL.createObjectURL(blob), link = document.createElement('a');
+        link.href = url; link.download = name; document.body.appendChild(link); link.click(); link.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+        say('保存しました。ダウンロードのフォルダを確認してください。');
+      }, png ? 'image/png' : 'image/jpeg', .95);
+    }, 30);
+  });
+  function showFallback(canvas, png) {
+    $('ov-img').src = canvas.toDataURL(png ? 'image/png' : 'image/jpeg', .95);
+    $('ov').hidden = false; say('');
+  }
+  $('ov-close').addEventListener('click', function () { $('ov').hidden = true; });
+
+  /* ===== 起動 ===== */
+  var sheet = $('sheet');
+  function setSheetH() { document.documentElement.style.setProperty('--sheet-h', sheet.offsetHeight + 'px'); }
+  if (window.ResizeObserver) new ResizeObserver(setSheetH).observe(sheet);
+  setSheetH();
+  var rt = 0;
+  window.addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(sched, 120); });
+  render(); refreshThumbs(); syncUI();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(sched);
+})();
+</script>
+</body>
+</html>
